@@ -1026,7 +1026,7 @@ class ProviderOfferingViewSet(
     @action(detail=True, methods=["post"])
     def delete_thumbnail(self, request, uuid=None):
         offering = self.get_object()
-        offering.thumbnail = None
+        offering.thumbnail.delete()
         offering.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1861,6 +1861,9 @@ class ScreenshotViewSet(
 
 
 class PluginViewSet(views.APIView):
+    permission_classes = ()
+    authentication_classes = ()
+
     def get(self, request):
         offering_types = plugins.manager.get_offering_types()
         payload = []
@@ -2415,6 +2418,23 @@ class BaseResourceViewSet(ConnectedOfferingDetailsMixin, core_views.ActionsViewS
 
         return Response(response_text)
 
+    @action(detail=True, methods=["get"])
+    def offering_for_subresources(self, request, uuid=None):
+        resource = self.get_object()
+
+        try:
+            scope = structure_models.ServiceSettings.objects.get(
+                scope=resource.scope,
+            )
+        except structure_models.ServiceSettings.DoesNotExist:
+            scope = resource.scope
+
+        offerings = models.Offering.objects.filter(scope=scope)
+        result = [
+            {"uuid": offering.uuid.hex, "type": offering.type} for offering in offerings
+        ]
+        return Response(result)
+
 
 class ResourceViewSet(BaseResourceViewSet):
     def get_queryset(self):
@@ -2608,6 +2628,29 @@ class ProviderResourceViewSet(BaseResourceViewSet):
         )
     ]
     downscaling_request_completed_validators = [downscaling_is_requested]
+
+    def pause_is_requested(obj):
+        if not obj.requested_pausing:
+            raise ValidationError("Pausing has not been requested.")
+
+    @action(detail=True, methods=["post"])
+    def pausing_request_completed(self, request, uuid=None):
+        resource = self.get_object()
+        resource.requested_pausing = False
+        resource.save(update_fields=["requested_pausing"])
+        logger.info(
+            "Pause request for resource %s completed",
+            resource,
+        )
+        log.log_resource_paused(resource)
+        return Response(status=status.HTTP_200_OK)
+
+    pausing_request_completed_permissions = [
+        permission_factory(
+            PermissionEnum.COMPLETE_RESOURCE_DOWNSCALING, ["offering.customer"]
+        )
+    ]
+    pausing_request_completed_validators = [pause_is_requested]
 
     @action(detail=True, methods=["get"])
     def team(self, request, uuid=None):

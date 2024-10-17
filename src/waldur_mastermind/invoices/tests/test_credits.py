@@ -59,6 +59,28 @@ class CustomerCreditCreateTest(test.APITransactionTestCase):
         response = self.create_credit(user)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_minimal_consumption_validation(self):
+        payload = {
+            "customer": structure_factories.CustomerFactory.get_url(
+                self.fixture.customer
+            ),
+            "value": 1000,
+            "minimal_consumption": 100,
+        }
+        self.client.force_authenticate(self.fixture.staff)
+        url = factories.CustomerCreditFactory.get_list_url()
+        response = self.client.post(url, payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        payload = {
+            "customer": structure_factories.CustomerFactory.get_url(),
+            "value": 1000,
+            "minimal_consumption": 2000,
+        }
+        url = factories.CustomerCreditFactory.get_list_url()
+        response = self.client.post(url, payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 @ddt
 class CustomerCreditUpdateTest(test.APITransactionTestCase):
@@ -310,7 +332,10 @@ class ProjectCreditTest(test.APITransactionTestCase):
         old_customer_credit_value = self.customer_credit.value
         self.invoice.set_created()
         self.customer_credit.refresh_from_db()
-        self.assertEqual(self.customer_credit.value, old_customer_credit_value)
+        self.assertEqual(
+            self.customer_credit.value,
+            old_customer_credit_value - self.project_credit.value,
+        )
 
     def test_use_organisation_credit_disable(self):
         self.project_credit.use_organisation_credit = True

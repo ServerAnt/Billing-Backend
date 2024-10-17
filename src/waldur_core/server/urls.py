@@ -26,7 +26,6 @@ urlpatterns = [
     re_path(r"^admintools/", include("admin_tools.urls")),
     re_path(r"^health-check/", include("health_check.urls")),
     re_path(r"^celery-stats/", core_views.CeleryStatsViewSet.as_view()),
-    re_path(r"^media/", include("binary_database_files.urls")),
 ]
 
 if settings.WALDUR_CORE.get("EXTENSIONS_AUTOREGISTER"):
@@ -45,7 +44,12 @@ urlpatterns += [
     re_path(r"^api/override-settings/", core_views.override_db_settings),
     re_path(r"^api/version/", core_views.version_detail),
     re_path(r"^api/feature-values/", core_views.feature_values),
-    re_path(r"^api-auth/password/", core_views.obtain_auth_token, name="auth-password"),
+    re_path(
+        r"^api-auth/password/",
+        core_views.ObtainAuthToken.as_view(),
+        name="auth-password",
+    ),
+    re_path(r"^api-auth/logout/", core_views.LogoutView.as_view(), name="auth-logout"),
     re_path(
         r"^$",
         core_views.ExtraContextTemplateView.as_view(

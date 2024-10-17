@@ -21,12 +21,19 @@ from rest_framework import permissions as rf_permissions
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.reverse import reverse
 from rest_framework.views import APIView
 from rest_framework.views import exception_handler as rf_exception_handler
 
 from waldur_auth_social.models import IdentityProvider
 from waldur_core import __version__
 from waldur_core.core import WaldurExtension, models, permissions
+from waldur_core.core.authentication import (
+    OIDC_AUTHENTICATION_METHODS,
+    AuthenticationMethod,
+    get_authentication_method,
+    set_authentication_method,
+)
 from waldur_core.core.exceptions import ExtensionDisabled, IncorrectStateException
 from waldur_core.core.features import FEATURES
 from waldur_core.core.logos import DEFAULT_LOGOS, LOGO_MAP
@@ -208,6 +215,7 @@ class ObtainAuthToken(RefreshTokenMixin, APIView):
         token = self.refresh_token(user)
         user.last_login = timezone.now()
         user.save(update_fields=["last_login"])
+        set_authentication_method(request, AuthenticationMethod.LOCAL)
 
         logger.debug("Returning token for successful login of user %s", user)
 
@@ -221,7 +229,34 @@ class ObtainAuthToken(RefreshTokenMixin, APIView):
         return Response({"token": token.key})
 
 
-obtain_auth_token = ObtainAuthToken.as_view()
+class LogoutView(APIView):
+    permission_classes = (rf_permissions.IsAuthenticated,)
+
+    def post(self, request, format=None):
+        request.user.auth_token.delete()
+        event_logger.auth.info(
+            "User {user_username} with full name {user_full_name} logged out.",
+            event_type="auth_logged_out",
+            event_context={"user": request.user, "request": request},
+        )
+        logout_url = None
+        authentication_method = get_authentication_method(request)
+        if authentication_method in OIDC_AUTHENTICATION_METHODS:
+            try:
+                idp = IdentityProvider.objects.get(provider=authentication_method)
+            except IdentityProvider.DoesNotExist:
+                pass
+            else:
+                logout_url = idp.logout_url
+        elif (
+            authentication_method == AuthenticationMethod.SAML2
+            and settings.WALDUR_AUTH_SAML2.get("ENABLE_SINGLE_LOGOUT")
+        ):
+            logout_url = reverse("saml2-logout", request=request)
+        if logout_url:
+            return Response(status=status.HTTP_200_OK, data={"logout_url": logout_url})
+        else:
+            return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # noinspection PyProtectedMember

@@ -3,6 +3,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db.models.aggregates import Sum
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions, serializers
 
@@ -662,7 +663,6 @@ class PaymentProfileSerializer(serializers.HyperlinkedModelSerializer):
 
 
 class PaymentSerializer(
-    structure_serializers.ProtectedMediaSerializerMixin,
     serializers.HyperlinkedModelSerializer,
 ):
     profile = serializers.HyperlinkedRelatedField(
@@ -829,13 +829,16 @@ class CreateCustomerCreditSerializer(CustomerCreditSerializer):
 
         return end_date
 
-    def validate_minimal_consumption(self, minimal_consumption):
-        if minimal_consumption and minimal_consumption >= self.value:
+    def validate(self, attrs):
+        minimal_consumption = attrs.get("minimal_consumption")
+        value = attrs.get("value")
+
+        if minimal_consumption and minimal_consumption >= value:
             raise exceptions.ValidationError(
                 _("Minimum consumption must be smaller than the credit.")
             )
 
-        return minimal_consumption
+        return attrs
 
     offerings = serializers.HyperlinkedRelatedField(
         view_name="marketplace-provider-offering-detail",
@@ -848,6 +851,21 @@ class CreateCustomerCreditSerializer(CustomerCreditSerializer):
 
 
 class ProjectCreditSerializer(serializers.HyperlinkedModelSerializer):
+    project_name = serializers.ReadOnlyField(source="project.name")
+    project_uuid = serializers.ReadOnlyField(source="project.uuid")
+    project_slug = serializers.ReadOnlyField(source="project.slug")
+    customer_credit = serializers.ReadOnlyField(
+        source="project.customer.customercredit.value"
+    )
+    allocated_customer_credit = serializers.SerializerMethodField(
+        method_name="get_allocated_customer_credit"
+    )
+
+    def get_allocated_customer_credit(self, project_credit):
+        return models.ProjectCredit.objects.filter(
+            project__customer=project_credit.project.customer
+        ).aggregate(sum=Sum("value"))["sum"]
+
     def validate_project(self, project):
         user = self.context["request"].user
 
@@ -863,7 +881,12 @@ class ProjectCreditSerializer(serializers.HyperlinkedModelSerializer):
             "url",
             "value",
             "project",
+            "project_name",
+            "project_uuid",
+            "project_slug",
             "use_organisation_credit",
+            "customer_credit",
+            "allocated_customer_credit",
         )
 
         extra_kwargs = {

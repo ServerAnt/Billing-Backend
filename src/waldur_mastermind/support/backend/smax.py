@@ -10,7 +10,12 @@ import textile
 from waldur_core.core.models import User as WaldurUser
 from waldur_mastermind.marketplace import models as marketplace_models
 from waldur_mastermind.support import models
-from waldur_smax.backend import Comment, Issue, SmaxBackend, User
+from waldur_mastermind.support.backend.smax_utils import (
+    Comment,
+    Issue,
+    SmaxBackend,
+    User,
+)
 
 from . import SupportBackend, SupportBackendType, SupportedFormat
 
@@ -193,8 +198,6 @@ class SmaxServiceBackend(SupportBackend):
                 issue=issue,
                 backend_id=backend_attachment.id,
                 backend_name=self.backend_name,
-                mime_type=backend_attachment.content_type or "",
-                file_size=backend_attachment.size,
                 state=models.Attachment.States.OK,
                 author=support_user,
             )

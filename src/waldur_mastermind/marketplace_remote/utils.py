@@ -3,7 +3,6 @@ import logging
 from collections import defaultdict
 
 import requests
-import urllib3
 from django.db.models import Q
 from django.utils import dateparse
 from django.utils.dateparse import parse_datetime
@@ -12,6 +11,8 @@ from waldur_client import WaldurClient, WaldurClientException
 
 from waldur_auth_social.models import ProviderChoices
 from waldur_core.core.utils import get_system_robot
+from waldur_core.media import models as media_models
+from waldur_core.media import utils as media_utils
 from waldur_core.permissions.enums import RoleEnum
 from waldur_core.permissions.models import UserRole
 from waldur_core.permissions.utils import get_permissions
@@ -475,13 +476,25 @@ def import_plans(local_offering, remote_offering, local_components_map):
             )
 
 
-def import_offering_thumbnail(local_offering, remote_offering):
+def import_offering_thumbnail(
+    local_offering: marketplace_models.Offering, remote_offering
+):
     thumbnail_url = remote_offering["thumbnail"]
     if thumbnail_url:
         thumbnail_resp = requests.get(thumbnail_url)
         content = io.BytesIO(thumbnail_resp.content)
-        file_name = urllib3.util.parse_url(thumbnail_url).path.split("/")[-1]
-        local_offering.thumbnail.save(file_name, content)
+        file_name = local_offering.uuid.hex
+        if local_offering.thumbnail:
+            file_object = media_models.File.objects.get(
+                name=local_offering.thumbnail.name
+            )
+            local_file_hash = file_object.hash
+            remote_file_hash = media_utils.get_image_hash(thumbnail_resp.content)
+            if local_file_hash != remote_file_hash:
+                local_offering.thumbnail.delete()
+                local_offering.thumbnail.save(file_name, content)
+        else:
+            local_offering.thumbnail.save(file_name, content)
     else:
         local_offering.thumbnail.delete()
     local_offering.save(update_fields=["thumbnail"])
