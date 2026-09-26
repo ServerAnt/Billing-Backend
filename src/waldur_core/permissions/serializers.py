@@ -748,14 +748,13 @@ class UserRoleCreateSerializer(UserRoleMutateSerializer):
         request = self.context["request"]
         target_user = attrs["user"]
         role: models.Role = attrs["role"]
-        expiration_time = attrs.get("expiration_time")
 
         if not target_user.is_active and not request.user.is_staff:
             raise ValidationError(
                 "Only staff users can assign roles to deactivated users."
             )
 
-        validate_role_grant(scope, target_user, role, expiration_time=expiration_time)
+        validate_role_grant(scope, target_user, role)
 
         return attrs
 

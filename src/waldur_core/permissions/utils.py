@@ -586,15 +586,20 @@ def validate_scope_available(scope):
         raise ValidationError("Offering is not available.")
 
 
-def validate_role_grant(scope, user, role, expiration_time=None):
+def validate_role_grant(scope, user, role):
     """Validate a role can be granted to a user on scope.
 
     Mirrors the role/scope checks in UserRoleCreateSerializer.validate so
     non-DRF callers (Invitation.accept, PermissionRequest.approve) enforce the
     same invariants. Permission/auth checks stay with the caller — this helper
     only validates the (scope, user, role) triple.
+
+    The duplicate check ignores expiration: any active grant of the role counts,
+    however soon it expires. A second active row for the same (user, role, scope)
+    would break update_user and delete_user, which expect exactly one; changing
+    how long a role lasts goes through update_user instead.
     """
-    if has_user(scope, user, role, expiration_time=expiration_time, match_clones=False):
+    if has_user(scope, user, role, match_clones=False):
         raise ValidationError("User has already the same role in this scope.")
 
     if not isinstance(scope, role.content_type.model_class()):
